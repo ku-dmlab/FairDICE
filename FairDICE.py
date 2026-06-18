@@ -132,7 +132,13 @@ def train_step(config, train_state: TrainState, batch, key: jax.random.PRNGKey):
             jax.nn.relu(f_derivative_inverse((e_val - jnp.max(e_val))/ beta, f_divergence))
         )
         stable_w = stable_w / (jnp.mean(stable_w) + 1e-8)
-        policy_loss = -(mask * stable_w * log_probs).sum() / (jnp.sum(mask) + 1e-8)
+        # The policy-loss fix below follows the analysis in the reproducibility report:
+        #   "[Re] FairDICE: A Fair Tradeoff in Multi-objective Offline RL".
+        # wrong-broadcast (original): stable_w is (B, 1) and log_probs is (B,), so the
+        # product silently broadcasts to (B, B). Kept commented for reference.
+        # policy_loss = -(mask * stable_w * log_probs).sum() / (jnp.sum(mask) + 1e-8)
+        # fixed-fairdice: flatten every term to (B,) so the weighting is elementwise.
+        policy_loss = -(mask.reshape(-1) * stable_w.reshape(-1) * log_probs.reshape(-1)).sum() / (jnp.sum(mask) + 1e-8)
         return policy_loss, log_probs
         
     (policy_loss, log_probs), policy_grads= nnx.value_and_grad(policy_loss_fn, has_aux=True)(policy)
